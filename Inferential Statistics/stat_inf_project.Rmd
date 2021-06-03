@@ -1,0 +1,171 @@
+---
+title: "Statistical Inference with GSS data"
+author: Ken Wood
+date: 5/8/2021
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(plotly)
+```
+
+Load data and clean by removing columns where 'NA' values comprise more than 10% of total rows. We will also delete the `caseid` column since it serves no useful purpose in our analysis.
+
+```{r load-data}
+load("gss.RData")
+gss_filtered <- gss[,colSums(is.na(gss)) <= 0.1*nrow(gss)] %>% select(-caseid) 
+```
+
+* * *
+
+## Part 1: Data
+
+According to the [GSS Data Documentation, Appendix A](http://gss.norc.org/documents/codebook/GSS_Codebook_AppendixA.pdf), the GSS observations are a multi-stage area probability sample to the block or segment level. At the block level, quota sampling is used with quotas based on sex, age, and employment status. The cost of the quota samples is substantially less than the cost of a full probability sample of the same size, but there is, of course, the chance of sample biases mainly due to not-at-homes which are not controlled by the quotas. However, in order to reduce this bias, the interviewers are given instructions to canvass and
+interview only after 3:00 p.m. on weekdays or during the weekend or holidays. This type of sample design is most appropriate when the past experience and judgment of a project director suggest that sample biases are likely to be small relative to the precision of the measuring instrument and the decisions that are to be made.
+
+**One should conclude that random sampling is NOT being employed to collect the GSS data because of convenience bias (i.e., respondents need to be available to be interviewed).  *Therefore, any inferences derived from these data may not be generalizable to the population at large.***
+
+* * *
+
+## Part 2: Research question
+
+For my analysis, I would like to investigate whether people are statistically more financially well-off when they are younger or older in age. I will look at the "Opinion of Family Income" variable, `finrela`, in the GSS dataset and compare proportional responses between those respondents who are below the mean age of 46 and those who are above the mean. Does the age-old question (pun intended): ***"Are we 'older & wiser' and therefore, more financially stable, as we mature?"*** turn out to be true or is this simply a myth?  Let's find out!
+
+* * *
+
+## Part 3: Exploratory data analysis
+  
+#### First, let's look at a histogram and density plot of `age` in `gss_filtered`
+
+```{r distribution of age, warning=FALSE}
+
+gss_filtered_no_NA <- gss_filtered[!(is.na(gss_filtered$age)),]
+
+age_density <- density(gss_filtered_no_NA$age)
+fig <- plot_ly(data=gss_filtered, x=~age,type="histogram",nbinsx=40,
+               name="Histogram") %>%
+  
+  add_trace(x = age_density$x, y = age_density$y, type = "scatter", mode = "lines",
+            fill = "tozeroy", yaxis = "y2", name = "Density") %>%
+  
+  layout(autosize = F, width = 800, height = 400,
+         title="Histogram and Density Plot of Age",
+         xaxis=list(title="Age"),yaxis=list(title="Number of Instances"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 5, y = 1))
+fig
+
+```
+
+\newline  
+
+#### Some summary statistics for the `age` variable...
+
+```{r}
+summary(gss_filtered$age)
+```
+ 
+
+#### Now, let's look at a distribution of the values of `finrela`.
+
+```{r}
+finrela_values <- as.data.frame(table(gss_filtered$finrela))
+
+fig <- plot_ly(data=finrela_values,x=~Var1,y=~Freq,type="bar") %>%
+  layout(title="Distribution of finrela Values",xaxis=list(title="finrela Value"),
+         yaxis=list(title="Number of Instances"))
+
+fig
+```
+
+
+* * *
+
+## Part 4: Inference
+
+#### My hypothesis is associated with the financial satisfaction variable `finrela`.
+
+**$H_0:$ The proportion of those respondents who rated their financial satisfaction as 'Above Average' or 'Far Above Average' is equal for those who are both above and below the mean age of 46 years.**
+
+**$H_a:$ The proportion of those respondents who rated their financial satisfaction as 'Above Average' of 'Far Above Average' is NOT equal for those who are both above and below the mean age of 46 years.**
+
+\newline
+
+
+#### First, we must refactor the `age` and `finrela` columns. 
+
+* Recoding for new variable `age_group` will be "younger" for ages <= 46 years and "older" for ages > 46 years.
+
+* Recoding for `finrela` will as follows: 'Above Average' and 'Far Above Average' responses will be recoded as 'Success' while 'Average', 'Below Average', and 'Far Below Average' responses will be recoded as 'Failure'.
+
+```{r recoding age and finrela columns}
+
+gss_filtered$age_group <- ifelse(gss_filtered$age<=46,"younger","older")
+
+levels(gss_filtered$finrela)[levels(gss_filtered$finrela) =="Far Above Average"|
+                               levels(gss_filtered$finrela)=="Above Average"] <-"Success"
+
+levels(gss_filtered$finrela)[levels(gss_filtered$finrela) =="Average"|
+                               levels(gss_filtered$finrela)=="Below Average"|
+                               levels(gss_filtered$finrela)=="Far Below Average"] <-"Failure"
+
+```
+
+#### We perform the hypothesis test...
+
+```{r warning=FALSE}
+
+# Inference for a proportion - hypothesis test
+
+inference(y = finrela, x = age_group, data = gss_filtered, statistic = "proportion",
+          type = "ht",
+          method = "theoretical", 
+          alternative = "twosided",
+          success = "Success")
+                
+```
+
+#### We determine the proportion statistics...
+
+```{r}
+
+# Inference for a proportion
+# Calculate 95% confidence intervals for the proportion of 'Success' responses.
+
+inference(y = finrela, x = age_group, data = gss_filtered, statistic = "proportion",
+          type = "ci",
+          method = "theoretical", 
+          success = "Success")
+                
+```
+
+* * *
+## Part 5: Summary & Conclusions
+
+Let's interpret the results we've obtained. We reproduce here the conditions for inference for comparing two independent proportions:
+
+* Independence - If we assume that each respondent's answer for the `finrela` and `age` variables are independent from another respondent's answers (which they are...) then:
+  + We have independence 'within' groups  
+  + We have independence 'between' groups  
+  
+\newline
+* Sample Size/Skew - Each sample meets the success-failure condition (y="younger", o="older'):
+
+  + $n_{y}p_{y} = (29322)(0.205) >= 10$
+  + $n_{y}(1-p_{y}) = (29322)(0.795) >= 10$ 
+
+  + $n_{o}p_{o} = (22635)(0.2045) >= 10$
+  + $n_{o}(1-p_{o}) = (22635)(0.7955) >= 10$ 
+
+We see from our inference results that the CI for the difference in proportions passes through 0 and our p-value (0.8803) is significantly greater than 0.05. Hence, **we must fail to reject $H_0$**and conclude that there is no statistically significant difference in the proportions of 'financially stable' people between the younger and older age groups.
