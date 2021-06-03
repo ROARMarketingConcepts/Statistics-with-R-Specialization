@@ -1,0 +1,96 @@
+---
+title: "Week 2 Quiz"
+author: "Ken Wood"
+date: "5/26/2021"
+output: html_document
+---
+
+<div class="question">
+**Question 5:** You are hired as a data analyst by politician A. She wants to know the proportion of people in Metrocity who favor her over politician B. From previous poll
+numbers, you place a Beta(40,60) prior on the proportion. From polling 200
+randomly sampled people in Metrocity, you find that 103 people prefer politician
+A to politician B. What is the posterior probability that the majority of
+people prefer politician A to politican B (i.e. P(p>0.5|data))? 
+
+* 0.198
+* **0.209**
+* 0.664
+* 0.934
+</div>
+
+```{r}
+k=103
+n=200
+alpha=k+40
+beta=60+n-k
+1-pbeta(0.5,shape1=alpha,shape2=beta)  #  P(p>0.5|data) = 1 - P(P<0.5|data)
+```
+
+<div class="question">
+**Question 6:** An engineer has just finished building a new production line for 
+manufacturing widgets. They have no idea how likely this process is to 
+produce defective widgets so they plan to run two separate runs of 15 
+widgets each. The first run produces 3 defective widgets and the second 5
+defective widgets.
+
+We represent our lack of apriori knowledge of the probability of producing a defective widgets, p, using a flat, uninformative prior -Beta(1,1). What should the posterior distribution of p be after the first run is finished? And after the second?
+
+* After the first run, Beta(4,13). After the second run, Beta(6,11).
+* After the first run, Beta(3,12). After the second run, Beta(8,22).
+* After the first run, Beta(3,12). After the second run, Beta(5,10).
+* **After the first run, Beta(4,13). After the second run, Beta(9,23).**
+</div>
+
+```{r}
+k1=3
+n1=15
+alpha1=k1+1
+beta1=1+n1-k1
+print(c(alpha1,beta1))
+
+k2=5
+n2=15
+alpha2=k2+alpha1
+beta2=beta1+n2-k2
+print(c(alpha2,beta2))
+```
+
+**Question 7:** Suppose that the number of fish that Hans catches in an hour follows a Poisson distribution with rate $\lambda$. If the prior on $\lambda$
+is Gamma(1,1) and Hans catches no fish in five hours, what is the posterior distribution for $\lambda$?
+
+<center> $Gamma(\alpha,\beta) \longrightarrow Gamma(\alpha^*=\alpha\ + \sum_{i = 1}^nx_i,\ \beta^*=n+\beta)$ </center>
+
+&nbsp;
+
+* $Gamma(k=2,\theta=1/5)$
+* *$Gamma(k=1,\theta=1/5)$*
+* $Gamma(k=1,\theta=1/6)$
+* $Gamma(k=2,\theta=1/6)$
+
+
+
+
+<div class="question">
+**Question 10:** Suppose you are given a coin and told that the die is either biased towards heads (p =0.75) or biased towards tails (p = 0.25). Since you have no prior knowledge
+about the bias of the coin, you place a prior probability of 0.5 on the outcome that the coin is biased towards heads. You flip the coin twice and it comes up tails both times. What
+is the posterior probability that your next flip will be heads? 
+
+* 1/3
+* **3/10**
+* 2/5
+* 3/8
+
+</div>
+
+```{r}
+p <- c(0.75,0.25)             # coin probs
+prior <- c(0.5,0.5)         # Original priors
+likelihood <- dbinom(x=0,size=2,prob=p)  # 2 flips, tails both times (heads=0)
+numerator <- prior*likelihood
+denominator <- sum(numerator)
+posteriors <- numerator/denominator      # Bayes Rule
+
+condProbs <- dbinom(x=1,size=1,prob=p)  # Flip again, want heads
+probability <- sum(condProbs*posteriors) # Calculate total probability
+probability
+```

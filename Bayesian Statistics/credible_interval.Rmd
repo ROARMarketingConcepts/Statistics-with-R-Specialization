@@ -1,10 +1,14 @@
+---
+title: "Bayesian Inference - Credible Intervals"
+author: "Ken Wood"
+date: "5/26/2021"
+output: html_document
+---
+
 ```{r echo=FALSE, message=FALSE}
 library(tidyverse)
 ```
 
-## Bayesian Statistics - Credible Intervals
-
-### Load packages
 
 In this lab we will explore some basic Bayesian inference using conjugate priors 
 and credible intervals to examine some categorical and count data from the 

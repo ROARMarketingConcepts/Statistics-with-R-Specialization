@@ -1,0 +1,72 @@
+---
+title: "Week 2 Practice Quiz"
+author: "Ken Wood"
+date: "5/26/2021"
+output: html_document
+---
+
+<div class="question">
+**Question 1:** Which of the following statements is true?
+
+* The prior is a mixture between the posterior and likelihood.
+* **The posterior is a mixture between the prior and likelihood.**
+* The likelihood is a mixture between the prior and posterior.
+</div>
+
+<div class="question">
+**Question 2:** Which of the following distributions would be a good choice of prior to use if you wanted to determine if a coin is fair when you have a strong  belief that the coin is fair? (Assume a model where we call heads a success and tails a failure). 
+
+* Beta (10, 10)
+* Beta (10, 90)
+* **Beta (50, 50)**
+* Beta (1, 1)
+* Beta (9, 1)
+</div>
+
+<div class="question">
+**Question 3:** If Amy is trying to make inferences about the average number of customers that visit Macy’s between noon and 1 p.m., which of the following distribution pairs represents a conjugate family here?
+
+* **Poisson-Gamma** 
+* Beta-Binomial
+* Normal-Normal
+</div>
+
+<div class="question">
+**Question 4:** Suppose that you sample 24 M&Ms from a bag and find that 3 of them are yellow. Assuming that you place a Beta(1,1) prior on the proportion of yellow M&Ms $p$,what is the posterior probability that $p<0.2$? Hint: Calculate this in R.
+
+* 0.60
+* 0.69
+* **0.77**
+* 0.92
+</div>
+
+```{r}
+k=3
+n=24
+alpha=k+1
+beta=1+n-k
+pbeta(0.2,shape1=alpha,shape2=beta)
+```
+
+<div class="question">
+**Question 5:** Suppose you are given a coin and told that the coin is either biased towards heads (p = 0.6) or biased towards tails (p = 0.4). Since you have no prior knowledge about the bias of the coin, you place a prior probability of 0.5 on the outcome that the coin is biased towards heads. You flip the coin twice and it comes up tails both times. What is the posterior probability that your next two flips will be heads? 
+
+* 0.2
+* 0.212
+* **0.222**
+* 0.25
+</div>
+
+```{r}
+p <- c(0.6,0.4)             # coin probs
+prior <- c(0.5,0.5)         # Original priors
+likelihood <- dbinom(x=0,size=2,prob=p)  # 2 flips, tails both times (heads=0)
+numerator <- prior*likelihood
+denominator <- sum(numerator)
+posteriors <- numerator/denominator      # Bayes Rule
+
+condProbs <- dbinom(x=2,size=2,prob=p)   # Flip again twice, want heads both times
+probability <- sum(condProbs*posteriors) # Calculate total probability
+probability
+```
+
