@@ -1,6 +1,10 @@
-## Bayesian Inference
+---
+title: "Bayesian Inference Lab"
+author: "Ken Wood"
+date: "5/26/2021"
+output: html_document
+---
 
-### Getting Started
 
 In this lab we will review exploratory data analysis using the `ggplot2` 
 package for data visualization, which is included in the `tidyverse`. The main 
