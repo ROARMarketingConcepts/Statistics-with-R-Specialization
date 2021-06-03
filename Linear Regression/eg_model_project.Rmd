@@ -1,0 +1,286 @@
+---
+title: "Modeling and Prediction for Movies"
+author: Ken Wood
+date: 5/14/2021
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(plotly)
+library(GGally)
+```
+
+* * *
+### Introduction
+
+Congratulations on getting a job as a data scientist at Paramount Pictures! 
+
+Your boss has just acquired data about how much audiences and critics like movies as well as numerous other variables about the movies. This dataset is provided below, and it includes information from Rotten Tomatoes and IMDB for a random sample of movies.
+
+She is interested in learning what attributes make a movie popular. She is also interested in learning something new about movies. She wants you team to figure it all out.
+
+As part of this project you will complete exploratory data analysis (EDA), modeling, and prediction. 
+
+* * *
+
+### Load data
+
+```{r load-data}
+load("movies.RData")
+```
+
+* * *
+
+## Part 1: Data
+
+The data set is comprised of 651 randomly sampled movies produced and released before 2016. Some of the features provided are only for informational purposes and do not make any sense to include in a statistical analysis. 
+
+My exploratory analysis (see below) confirms that these data appear to be random samples and the results achieved through linear regression can be generalized to a larger popultion.
+
+* * *
+
+## Part 2: Research question
+
+My research question is: **What movie features can influence its `imdb_rating`?**
+
+* $H_0:$ There are no predictors in the `movie` dataset that can be associated with `imdb_rating`, i.e., all $\beta_{i}=0$
+* $H_a:$ There are one or more predictors in the `movie` dataset that can be associated with `imdb_rating`, i.e., some or all $\beta_{i}\neq0$
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+First, let's see what the variable types are in the `movies` dataset... It looks like a good mix of numerical and categorical variables.
+
+```{r}
+str(movies)
+```
+
+Now, let's develop a correlation matrix for the numerical variables to see if there is any colinearity...
+
+```{r warning=FALSE}
+num_cols <- c("runtime","imdb_rating","imdb_num_votes","critics_score","audience_score")
+num_df <- movies %>% select(all_of(num_cols))
+ggpairs(num_df)
+```
+
+If we isolate the variable pairs with correlations > 0.7, we have the following:
+
+* `critics_score` <--> `imdb_rating`  (0.765)
+* `audience_score`  <--> `imdb_rating` (0.865)
+* `critics_score` <--> `audience_score` (0.704)
+
+If we keep `imdb_rating` as our dependent (response) variable, we might consider dropping `audience_score` and `critics_score`.
+
+Now, let's check the distribution of the numerical variables we intend to use, namely `runtime`,`imdb_rating`,`imdb_num_votes`:
+
+```{r warning=FALSE}
+
+movies_no_NA <- movies[!(is.na(movies$runtime)),]
+
+runtime_density <- density(movies_no_NA$runtime)
+fig <- plot_ly(data=movies, x=~runtime,type="histogram",nbinsx=40,
+               name="Histogram") %>%
+  
+  add_trace(x = runtime_density$x, y = runtime_density$y, type = "scatter", mode = "lines",
+            fill = "tozeroy", yaxis = "y2", name = "Density") %>%
+  
+  layout(autosize = F, width = 800, height = 400,
+         title="Histogram and Density Plot of 'runtime'",
+         xaxis=list(title="runtime"),yaxis=list(title="Number of Instances"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 5, y = 1))
+fig
+
+```
+
+`runtime` looks like it is normally-distributed.
+
+```{r warning=FALSE}
+
+movies_no_NA <- movies[!(is.na(movies$imdb_rating)),]
+
+imdb_rating_density <- density(movies_no_NA$imdb_rating)
+fig <- plot_ly(data=movies, x=~imdb_rating,type="histogram",nbinsx=40,
+               name="Histogram") %>%
+  
+  add_trace(x = imdb_rating_density$x, y = imdb_rating_density$y, type = "scatter", mode = "lines",
+            fill = "tozeroy", yaxis = "y2", name = "Density") %>%
+  
+  layout(autosize = F, width = 800, height = 400,
+         title="Histogram and Density Plot of 'imdb_rating'",
+         xaxis=list(title="imdb_rating"),yaxis=list(title="Number of Instances"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 5, y = 1))
+fig
+
+```
+
+`imdb_rating` looks like it is normally-distributed.
+
+```{r warning=FALSE}
+
+movies_no_NA <- movies[!(is.na(movies$imdb_num_votes)),]
+
+imdb_num_votes_density <- density(movies_no_NA$imdb_num_votes)
+fig <- plot_ly(data=movies, x=~imdb_num_votes,type="histogram",nbinsx=40,
+               name="Histogram") %>%
+  
+  add_trace(x = imdb_num_votes_density$x, y = imdb_num_votes_density$y, type = "scatter", mode = "lines",
+            fill = "tozeroy", yaxis = "y2", name = "Density") %>%
+  
+  layout(autosize = F, width = 800, height = 400,
+         title="Histogram and Density Plot of 'imdb_num_votes'",
+         xaxis=list(title="imdb_num_votes"),yaxis=list(title="Number of Instances"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 5, y = 1))
+fig
+
+```
+
+The distribution plot of `imdb_num_votes` is heavily skewed to the right. Let's transform this variable by taking the log.
+
+```{r warning=FALSE}
+
+movies <- movies %>% mutate(log_imdb_num_votes=log(imdb_num_votes))
+movies_no_NA <- movies[!(is.na(movies$log_imdb_num_votes)),]
+
+imdb_num_votes_density <- density(movies_no_NA$log_imdb_num_votes)
+fig <- plot_ly(data=movies, x=~log_imdb_num_votes,type="histogram",nbinsx=40,
+               name="Histogram") %>%
+  
+  add_trace(x = imdb_num_votes_density$x, y = imdb_num_votes_density$y, type = "scatter", mode = "lines",
+            fill = "tozeroy", yaxis = "y2", name = "Density") %>%
+  
+  layout(autosize = F, width = 800, height = 400,
+         title="Histogram and Density Plot of 'Log(imdb_num_votes)'",
+         xaxis=list(title="Log(imdb_num_votes)"),yaxis=list(title="Number of Instances"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 5, y = 1))
+fig
+
+```
+
+<br>
+
+We can see that `log_imdb_num_votes` is normally distributed.
+
+Any categorial variables we decide to include need to have a relatively small number of values (or factors) so that our analysis does not become unwieldy. Let's look at categorical values with factors <= 6. Therefore, we will consider `title_type`, `mpaa_rating`, `critics_rating`, `audience_rating`, and `top200_box`.
+
+Let's refactor `mpaa_rating` from 6 to 2 factors, namely, 'family-friendly' (G and PG ratings) and 'not family-friendly' (PG-13, R, NC-17, and Unrated ratings).
+
+```{r}
+levels(movies$mpaa_rating)[levels(movies$mpaa_rating) =="G"|
+                               levels(movies$mpaa_rating)=="PG"] <- "Family-Friendly"
+
+levels(movies$mpaa_rating)[levels(movies$mpaa_rating) =="PG-13"|
+                               levels(movies$mpaa_rating)=="R" |
+                               levels(movies$mpaa_rating)=="NC-17" |
+                               levels(movies$mpaa_rating)=="Unrated"] <- "Not Family-Friendly"
+```
+
+Let's also investigate the effect of what time of year a particular movie is released. The big release times are Summer (May, June, July) and Holiday (November, December)
+
+```{r}
+
+movies$thtr_rel_season <- ifelse(movies$thtr_rel_month>=1 & movies$thtr_rel_month<=4 |
+                                  movies$thtr_rel_month>=8 & movies$thtr_rel_month<=10, "Other",
+                                ifelse(movies$thtr_rel_month>=5 &
+                                         movies$thtr_rel_month<=7,"Summer","Holiday" ))
+
+```
+
+* * *
+
+## Part 4: Modeling
+
+The dependent variable for our linear model will be `imdb_rating`.  Our independent variables will be 
+
+* `runtime`
+* `Log(imdb_num_votes)`
+* `mpaa_rating`
+* `thtr_rel_season`
+* `title_type`
+* `critics_rating`
+* `audience_rating`
+* `top200_box`
+
+```{r}
+mod1 <- lm(imdb_rating ~ runtime+log_imdb_num_votes+mpaa_rating+thtr_rel_season+
+            title_type+critics_rating+audience_rating+top200_box, data=movies)
+
+summary(mod1)
+```
+
+We see that the p-value for two variables, `mpaa_rating` and `top200_box`, are quite high and we will remove them.
+
+
+```{r}
+mod2 <- lm(imdb_rating ~ runtime+log_imdb_num_votes+thtr_rel_season+
+            title_type+critics_rating+audience_rating, data=movies)
+
+summary(mod2)
+```
+
+Model mod2 seems to perform relatively well. Our p-value for the model is very close to zero (< 2.2e-16) so mod2 is significant. We note that the F-statistic (130.9) is quite a bit higher than that of mod1 (106.9), so we can conclude that the $\beta$ of at least one of our predictors is non-zero. Let's plot the residuals:
+
+```{r}
+fig <- plot_ly(y=mod2$residuals,type="scatter",mode="markers") %>%
+  layout(title="Residual Plot - mod2", xaxis=list(title="Observation"),
+         yaxis=list(title="ypred-yobs"))
+
+fig
+```
+
+We can see that the residuals seem to be evenly distributed around $y_{pred}-y_{obs}=0$
+
+* * *
+
+## Part 5: Prediction
+
+The movie I would like to consider for my prediction is "John Wick" which has an `imdb_rating` of 7.8 and is not included in the original `movies` dataset.
+
+```{r warning=FALSE}
+john_wick <- read.csv("John Wick ratings.csv")
+john_wick <- john_wick %>% mutate(log_imdb_num_votes=log(imdb_num_votes))
+```
+
+Let's get a prediction of imdb_rating based on the John Wick data:
+
+```{r}
+pred <- predict(mod2,newdata=john_wick,interval="prediction",type="response")
+pred
+```
+
+The 95% **prediction** interval associated with an `imdb_rating` of 7.56 is (6.28, 8.84). This means that, according to the mod2 model, 95% the movies that are *predicted* to have an `imdb_rating` of 7.56 should have an *actual* rating that falls between 6.28 and 8.84.
+
+```{r}
+pred <- predict(mod2,newdata=john_wick,interval="confidence",type="response")
+pred
+```
+
+The **confidence** interval reflects the uncertainty around the *mean predictions*. The 95% confidence interval associated with an `imdb_rating` of 7.56  is (7.40, 7.72). This means that, according to the mod2 model, a movie with an `imdb_rating` of 7.56 on average will have a rating within the interval (7.40, 7.72).
+
+We calculate the percent error knowing $y_{obs}=7.8$ from the data:  
+<br>
+
+<center> $\frac{y_{obs}-y_{pred}}{y_{obs}} = \frac{7.8-7.56}{7.8} = 0.031$ or $3.1\%$ </center>
+
+Not bad!!
+
+* * *
+
+## Part 6: Conclusion
+
+In this analysis, we fitted selected features about movies to a linear model to predict `imdb_rating`. To improve the robustness of our model, we ensured that all numerical variables being considered were normally distributed. We were able to build a model using a mixture of numerical and categorical variables that achieved an $R^2$ value of 0.648. It is possible that, with a larger dataset and some additional feature engineering, an even higher value of $R^2$ might be achieved. Future work might include a linear model of non-linear terms, however, we must exercise caution so as to not overfit the data.
