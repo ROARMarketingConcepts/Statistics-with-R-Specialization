@@ -327,8 +327,8 @@ plot(ames_test$price, resid.MPM,
 
 7. True or False: The median probability model has a tendency to over-predict prices for the most expensive houses.
 <ol>
-<li> **True**
-<li> False
+<li> True
+<li> **False**
 </ol>
 
 \fb{Interpret the plot above.  Do the most expensive homes in the test dataset have high or low residuals?  What does that mean about whether our model over-predicts or under-predicts housing prices?
