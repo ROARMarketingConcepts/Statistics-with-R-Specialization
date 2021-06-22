@@ -1,0 +1,588 @@
+---
+title: "Statistics with R Capstone Project - Peer Assessment II"
+author: Ken Wood
+date: 6/22/21
+output:
+  html_document: 
+    pandoc_args: ["--number-sections",]
+---
+
+# Background
+
+As a statistical consultant working for a real estate investment firm, your task is to develop a model to predict the selling price of a given home in Ames, Iowa. Your employer hopes to use this information to help assess whether the asking price of a house is higher or lower than the true value of the house. If the home is undervalued, it may be a good investment for the firm.
+
+# Training Data and relevant packages
+
+In order to better assess the quality of the model you will produce, the data have been randomly divided into three separate pieces: a training data set, a testing data set, and a validation data set. For now we will load the training data set, the others will be loaded and used later.
+
+```{r load, message = FALSE}
+load("ames_train.Rdata")
+```
+
+Use the code block below to load any necessary packages
+
+```{r packages, message = FALSE}
+library(tidyverse)
+library(statsr)
+library(dplyr)
+library(BAS)
+library(plotly)
+library(corrplot)
+library(MASS)
+```
+
+## Part 1 - Exploratory Data Analysis (EDA)
+
+When you first get your data, it's very tempting to immediately begin fitting models and assessing how they perform.  However, before you begin modeling, it's absolutely essential to explore the structure of the data and the relationships between the variables in the data set.
+
+Do a detailed EDA of the ames_train data set, to learn about the structure of the data and the relationships between the variables in the data set (refer to Introduction to Probability and Data, Week 2, for a reminder about EDA if needed). Your EDA should involve creating and reviewing many plots/graphs and considering the patterns and relationships you see. 
+
+After you have explored completely, submit the three graphs/plots that you found most informative during your EDA process, and briefly explain what you learned from each (why you found each informative).
+
+* * *
+
+Let's get an understanding of the missing values in the dataset:
+
+```{r}
+ames_train <- ames_train %>% mutate(Garage.Area=replace_na(Garage.Area,0),
+      Garage.Cars=replace_na(Garage.Cars,0),
+      Lot.Frontage=replace_na(Lot.Frontage,0),
+      BsmtFin.SF.1=replace_na(BsmtFin.SF.1,0),
+      BsmtFin.SF.2=replace_na(BsmtFin.SF.2,0),
+      Total.Bsmt.SF=replace_na(Total.Bsmt.SF,0),
+      Bsmt.Unf.SF=replace_na(Bsmt.Unf.SF,0),
+      Bsmt.Full.Bath=replace_na(Bsmt.Full.Bath,0),
+      Bsmt.Half.Bath=replace_na(Bsmt.Half.Bath,0),
+      Mas.Vnr.Area=replace_na(Mas.Vnr.Area,0))
+
+```
+
+
+
+Let's look at the distribution of `price`:
+
+```{r creategraphs, warning=FALSE}
+
+m <- list(l=50,r=50,b=50,t=50,pad=4)
+
+price_density <- density(ames_train$price)
+
+fig <- plot_ly(data=ames_train, x=~price, type="histogram", 
+               nbinsx=75,name="Histogram") %>%
+  add_trace(x=price_density$x,y=price_density$y,type="scatter",
+            mode="lines",fill="tozeroy",yaxis="y2",name="Density") %>%
+layout(autosize = F, width=800, height=400, margin=m,
+         title="Histogram and Density Plot of 'ames_train$price'",
+         xaxis=list(title="House Price ($)"),yaxis=list(title="Number of Observations"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 0.7, y = 0.8))
+
+
+fig
+
+print(paste("Mean: ",round(mean(ames_train$price),0)))
+print(paste("Median: ",round(median(ames_train$price),0)))
+print(paste("SD: ",round(sd(ames_train$price),0)))
+```
+
+We can see that `price` is right-skewed. Because of that, it might be helpful to take a look at the distribution of log(`price`) = `lprice`.  
+
+```{r Distribution of "Normal" Sales, warning=FALSE}
+
+m <- list(l=50,r=50,b=50,t=50,pad=4)
+
+ames_train <- ames_train %>% mutate(lprice=log(price))
+
+price_density <- density(ames_train$lprice)
+
+fig <- plot_ly(data=ames_train, x=~lprice, type="histogram", 
+               nbinsx=75,name="Histogram") %>%
+  add_trace(x=price_density$x,y=price_density$y,type="scatter",
+            mode="lines",fill="tozeroy",yaxis="y2",name="Density") %>%
+layout(autosize = F, width=800, height=400, margin=m,
+         title="Histogram and Density Plot of 'lprice'",
+         xaxis=list(title="log(price)"),yaxis=list(title="Number of Observations"),
+         yaxis2 = list(overlaying = "y", side = "right", title="Density"),
+         legend = list(x = 0.2, y = 0.8))
+
+fig
+
+print(paste("Mean: ",round(mean(ames_train$lprice),2)))
+print(paste("Median: ",round(median(ames_train$lprice),2)))
+print(paste("SD: ",round(sd(ames_train$lprice),2)))
+```
+
+It looks like the distribution of log(`price`) is less skewed.  Something to keep in mind...
+
+Now, let's take a look at the correlation among the numerical variables in `ames_train`.
+
+```{r}
+
+# Subset all numeric columns in `ames_train`
+ames_train_numeric <- select_if(ames_train, is.numeric) %>%
+  dplyr::select(-c(PID,Garage.Yr.Blt))
+corr_matrix <- cor(ames_train_numeric)
+fig <- corrplot(corr_matrix,method="circle",tl.cex=0.6) 
+```
+
+Upon examination of the correlation matrix, we can see that there are a number of variables that are correlated with `lprice'.  We will use most, if not all, of these features to build our initial model.
+
+* * *
+
+## Part 2 - Development and assessment of an initial model, following a semi-guided process of analysis
+
+### Section 2.1 An Initial Model
+In building a model, it is often useful to start by creating a simple, intuitive initial model based on the results of the exploratory data analysis. (Note: The goal at this stage is **not** to identify the "best" possible model but rather to choose a reasonable and understandable starting point. Later you will expand and revise this model to create your final model.
+
+Based on your EDA, select *at most* 10 predictor variables from “ames_train” and create a linear model for `price` (or a transformed version of price) using those variables. Provide the *R code* and the *summary output table* for your model, a *brief justification* for the variables you have chosen, and a *brief discussion* of the model results in context (focused on the variables that appear to be important predictors and how they relate to sales price).
+
+* * *
+
+Based on the correlation matrix, it probably makes sense to develop a base model comprised of the variables that have a positive correlation with `lprice`. Incidently, we will select `lprice` as the dependent variable to avoid the skewness effects of the original feature `price`. Our selected features include `area`,`Overall.Cond`,`Total.Bsmt.SF`,`X1st.Flr.SF`,`Garage.Area`,`Full.Bath`and `Garage.Cars`. 
+
+```{r fit_model}
+
+initial_model <- lm(lprice~area+Overall.Cond+Total.Bsmt.SF+X1st.Flr.SF++Full.Bath+
+                      Garage.Area+Garage.Cars,data=ames_train)
+
+summary(initial_model)
+initial_model.res <- residuals(initial_model)
+
+fig <- plot_ly(y=initial_model.res,type="scatter",mode="markers") %>%
+  layout(title="Residuals Plot for Base Linear Model",
+         xaxis=list(title="Observation"),
+         yaxis=list(title="log(price)"))
+
+fig      
+```
+
+We can observe that our initial model has an okay $R^2$ of 0.7356 and the residuals seem to be evenly distributed around the $lprice=0$ line.
+
+* * *
+
+### Section 2.2 Model Selection
+
+Now either using `BAS` or another stepwise selection procedure choose the "best" model you can, using your initial model as your starting point. Try at least two different model selection methods and compare their results. Do they both arrive at the same model or do they disagree? What do you think this means?
+
+* * *
+
+Let's use the `stepAIC` function in the `MASS` package to evaluate our model.
+
+```{r model_select AIC}
+
+initial_model_AIC <- stepAIC(initial_model, direction = 'backward', k=2, trace = FALSE)
+summary(initial_model_AIC)
+```
+
+```{r model_select BIC}
+
+initial_model_BIC <- stepAIC(initial_model, direction = 'backward', k=log(nrow(ames_train)), trace = FALSE)
+summary(initial_model_BIC)
+```
+
+
+We see that, for both cases (AIC and BIC priors), the final model selected includes the coefficients `area`,`Overall.Cond`,`Total.Bsmt.SF`,`Full.Bath`,and `Garage.Cars`, while omitting `X1st.Flr.SF` and `Garage.Area`. This is a good indication that these housefeatures are statistically significant in determining `lprice`.
+
+* * *
+
+### Section 2.3 Initial Model Residuals
+One way to assess the performance of a model is to examine the model's residuals. In the space below, create a residual plot for your preferred model from above and use it to assess whether your model appears to fit the data well. Comment on any interesting structure in the residual plot (trend, outliers, etc.) and briefly discuss potential implications it may have for your model and inference / prediction you might produce.
+
+* * *
+
+```{r revised model, model_AIC}
+initial_model_AIC <- lm(lprice~area+Overall.Cond+Total.Bsmt.SF+Full.Bath+Garage.Cars,
+                data=ames_train)
+
+par(mfrow=c(2,2))
+plot(initial_model_AIC)
+```
+
+An inspection of the plots above indicate that the residuals generated by `initial_model_AIC` do not appear to be abnormal. However, let's take a closer look:
+
+```{r model_residual}
+
+initial_model_AIC.res <- residuals(initial_model_AIC)
+
+fig <- plot_ly(y=initial_model_AIC.res,type="scatter",mode="markers") %>%
+  layout(title="Residuals Plot for Selected Initial Linear Model - `ames_train",
+         xaxis=list(title="Observation"),
+         yaxis=list(title="log(price)"))
+
+fig  
+```
+
+Let's look at a couple of the residual outliers. 
+
+* The first one is observation 310 with a residual of -1.8. Upon further inspection of the original `ames_training` data, this particular observation was a partial sale, hence the significant difference between $\widehat{lprice}$ and $lprice_{obs}$.
+
+* The second one is observation 428 with a residual of -2.04. Upon further inspection of the original `ames_training` data, this particular observation was classified as an "abnormal" sale, hence the significant difference between $\widehat{lprice}$ and $lprice_{obs}$. 
+
+* * *
+
+### Section 2.4 Initial Model RMSE
+
+You can calculate it directly based on the model output. Be specific about the units of your RMSE (depending on whether you transformed your response variable). The value you report will be more meaningful if it is in the original units (dollars).
+
+* * *
+
+
+```{r model_rmse}
+library(Metrics)
+
+round(rmse(ames_train$lprice,predict(initial_model_AIC,ames_train)),2)
+
+```
+
+This will be our baseline RMSE.
+
+* * *
+
+### Section 2.5 Overfitting 
+
+The process of building a model generally involves starting with an initial model (as you have done above), identifying its shortcomings, and adapting the model accordingly. This process may be repeated several times until the model fits the data reasonably well. However, the model may do well on training data but perform poorly out-of-sample (meaning, on a dataset other than the original training data) because the model is overly-tuned to specifically fit the training data. This is called “overfitting.” To determine whether overfitting is occurring on a model, compare the performance of a model on both in-sample and out-of-sample data sets. To look at performance of your initial model on out-of-sample data, you will use the data set `ames_test`.
+
+```{r loadtest, message = FALSE}
+load("ames_test.Rdata")
+```
+
+Use your model from above to generate predictions for the housing prices in the test data set.  Are the predictions significantly more accurate (compared to the actual sales prices) for the training data than the test data?  Why or why not? Briefly explain how you determined that (what steps or processes did you use)?
+
+* * *
+
+```{r initmodel_test}
+
+# Create the `lprice` in `ames_test`.
+
+ames_test <- ames_test %>% mutate(lprice=log(price))
+
+round(rmse(ames_test$lprice,predict(initial_model_AIC,ames_test)),2)
+
+```
+
+The RMSE of the `ames_test` using this linear model is 0.18, which is 18% less than the training set `ames_train` RMSE of 0.22.  This would indicate that our linear model, `inital_model_AIC`, seems to do a decent job of generalizing to the test data. One of the reasons why the RMSE for `ames_test` might be lower is that the spread of residual outliers in `ames_test` may be less than those in `ames_train`. To investigate this, let's plot the residuals of `ames_test` using model 
+`initial_model_AIC`:
+
+```{r}
+initial_model_AIC.res_test <- predict(initial_model_AIC,ames_test)-ames_test$lprice
+
+fig <- plot_ly(y=initial_model_AIC.res_test,type="scatter",mode="markers") %>%
+  layout(title="Residuals Plot for Selected Initial Linear Model - `ames_test`",
+         xaxis=list(title="Observation"),
+         yaxis=list(title="log(price)"))
+
+fig  
+```
+
+Indeed, the outlier spread among the `ames_test` residuals is quite a bit less than that of `ames_train`.  This probably explains the lower RMSE.
+
+* * *
+
+## Part 3 Development of a Final Model
+
+Now that you have developed an initial model to use as a baseline, create a final model with *at most* 20 variables to predict housing prices in Ames, IA, selecting from the full array of variables in the dataset and using any of the tools that we introduced in this specialization.  
+
+Carefully document the process that you used to come up with your final model, so that you can answer the questions below.
+
+### Section 3.1 Final Model
+
+Provide the summary table for your model.
+
+* * *
+
+For the final model, we will use all of the predictors from our previous model (except `X1st.Flr.SF` and `Garage.Area`) and add some categorical features to the mix. We can intuitively guess as to which categorical variables will likely have an impact on `lprice` and we will include them. We will also include some features where we might not have any inclination as to how it would affect the sales price. The predictors we will use are as follows:
+
+* `area` - in initial model
+* `Overall.Cond` - in initial model
+* `Total.Bsmt.SF` - in initial model
+* `Full.Bath` - in initial model
+* `Garage.Cars` - in initial model
+* `MS.SubClass` - newly added
+* `Neighborhood` - newly added
+* `House.Style` - newly added
+* `Heating.QC` - newly added
+* `Kitchen.Qual` - newly added
+* `Sale.Type` - newly added
+* `Sale.Condition` - newly added
+
+
+```{r model_playground}
+
+# Subset the `ames_train` down to the features of interest
+ames_train_final <- ames_train %>%
+  dplyr::select(c(lprice,area,Overall.Cond,Total.Bsmt.SF,Garage.Area,
+           Garage.Cars,MS.SubClass,Neighborhood,House.Style,Heating.QC,
+           Kitchen.Qual,Sale.Type,Sale.Condition))
+
+final_model <- lm(lprice~.,data=ames_train_final)
+
+final_model_AIC <- stepAIC(final_model, direction='backward', trace = FALSE)
+summary(final_model_AIC)
+```
+
+The `final_model_AIC` summary shows that the addition of the categorical variables increases the $R^2$ value from 0.7353 to 0.8714, explaining 87.1% of the variance in log(`price`) of the houses. 
+
+* * *
+
+### Section 3.2 Transformation
+
+Did you decide to transform any variables?  Why or why not? Explain in a few sentences.
+
+* * *
+
+For my proposed model, I looked at Bayesian averaging with an AIC prior using both `price` and `log(price)` as the dependent variable.
+
+```{r price as dependent variable}
+
+ames_train_trans <- ames_train %>%
+  dplyr::select(c(price,lprice,area,Overall.Cond,Total.Bsmt.SF,Full.Bath,
+           Garage.Cars,MS.SubClass,Neighborhood,House.Style,Heating.QC,
+           Kitchen.Qual,Sale.Type,Sale.Condition))
+
+final_modela <- bas.lm(price ~ .-lprice, data=ames_train_trans,
+                   prior = "AIC",
+                   modelprior = uniform())
+
+summary(final_modela)
+```
+
+```{r lprice as dependent variable}
+final_modelb <- bas.lm(lprice ~ .-price, data=ames_train_trans,
+                   prior = "AIC",
+                   modelprior = uniform())
+summary(final_modelb)
+```
+
+
+Since the model $R^2$ where `lprice` is the dependent variable is higher than the model with `price`, we will keep the transformed feature `lprice` in our model.
+
+Let's calculate the RMSE for this model
+
+```{r}
+round(rmse(ames_train_final$lprice,predict(final_model_AIC,ames_train_final)),2)
+```
+
+Notice that, with the inclusion of categorical variables into the original model, the RMSE has decreased from 0.22 to 0.15 for the train dataset.
+
+* * *
+
+### Section 3.3 Variable Interaction
+
+Did you decide to include any variable interactions? Why or why not? Explain in a few sentences.
+
+* * *
+
+There are a number of categorical variables that I included in my model to understand how the different values they may take on might influence `lprice` Looking at the p-values of the coefficients show that the different values of `Neighborhood` can significantly impact the dependent variable. Another categorical variable whose values seem to have a significant impact is `Sale.Condition`.
+
+```{r model_inter}
+```
+
+* * *
+
+### Section 3.4 Variable Selection
+
+What method did you use to select the variables you included? Why did you select the method you used? Explain in a few sentences.
+
+* * *
+
+As a quick litmus test, I created a draft linear model and then examined the p-values of the coefficients. Any numerical variables that had a p-value significantly greater than 0.05 would likely be dropped, keeping in mind that the resultant $R^2$ should not be significantly affected in a negative manner.
+
+```{r model_select}
+```
+
+* * *
+
+### Section 3.5 Model Testing
+
+How did testing the model on out-of-sample data affect whether or how you changed your model? Explain in a few sentences.
+
+* * *
+
+When I ran my final linear model on the `ames_test` dataset, I discovered that `ames_test` contains some values for `Neighborhood` and `House.Style` that were not seen in `ames_train`. Let's see how many observations in `ames_test` this comprises:
+
+```{r  ames_test value testing}
+nrow(ames_test[ames_test$Neighborhood=="Landmrk",])
+nrow(ames_test[ames_test$House.Style=="2.5Fin",])
+```
+
+Since there is only three observations that fit this description, we will remove them from our analysis.
+
+```{r ames_test adjustment}
+
+ames_test_final <- ames_test %>% filter(Neighborhood!="Landmrk",House.Style!="2.5Fin")
+
+```
+
+Let's calculate the RMSE for the test data set...
+
+```{r}
+round(rmse(ames_test_final$lprice,predict(final_model_AIC,ames_test_final)),2)
+```
+
+Great! It looks as though the RMSE for both the train and test sets are very close using this this `lprice`-based model.
+
+* * *
+
+## Part 4 Final Model Assessment
+
+### Section 4.1 Final Model Residual
+
+For your final model, create and briefly interpret an informative plot of the residuals.
+
+* * *
+
+Let's look at the residuals for `final_AIC` model.
+
+```{r warning=FALSE}
+
+par(mfrow=c(2,2))
+plot(final_model_AIC)
+```
+
+And a closer look...
+
+```{r}
+final_model_AIC.res <- residuals(final_model_AIC)
+
+fig <- plot_ly(y=final_model_AIC.res,type="scatter",mode="markers") %>%
+  layout(title="Residuals Plot for Final Linear Model - 'ames_train'",
+         xaxis=list(title="Observation"),
+         yaxis=list(title="log(price)"))
+
+fig 
+```
+
+Now, let's look at the residuals generated by `ames_test` using this model:
+
+```{r}
+ames_test_final_model <- ames_test %>% filter(Neighborhood!="Landmrk",House.Style!="2.5Fin")
+
+final_model_AIC.res_test <- predict(final_model_AIC,ames_test_final_model)-ames_test_final_model$lprice
+
+fig <- plot_ly(y=final_model_AIC.res_test,type="scatter",mode="markers") %>%
+  layout(title="Residuals Plot for Selected Linear Model - 'ames_test'",
+         xaxis=list(title="Observation"),
+         yaxis=list(title="log(price)"))
+
+fig
+```
+
+
+* * *
+
+### Section 4.2 Final Model RMSE
+
+For your final model, calculate and briefly comment on the RMSE.
+
+* * *
+
+Previously, we calculated the RMSE for both the train and test sets using our initial model. We will reproduce those results here:
+
+```{r}
+
+# RMSE for train dataset
+round(rmse(ames_train_final$lprice,predict(final_model_AIC,ames_train_final)),2)
+
+# RMSE for test dataset
+round(rmse(ames_test_final$lprice,predict(final_model_AIC,ames_test_final)),2)
+```
+
+Since the RMSEs are quite close, we can conclude that our model is not over-fitting on `ames_train`.
+
+* * *
+
+### Section 4.3 Final Model Evaluation
+
+What are some strengths and weaknesses of your model?
+
+* * *
+
+Model Strengths:
+
+* Only 12 predictor variables
+* Multiple $R^2$ > 0.87
+* Generalizes well to the `ames_test` dataset
+* Use log(`price`) to avoid skewness of `price`
+
+Model Weaknesses
+
+* Multiple $R^2$ could likely be improved with additional feature engineering
+
+* * *
+
+### Section 4.4 Final Model Validation
+
+Testing your final model on a separate, validation data set is a great way to determine how your model will perform in real-life practice. 
+
+You will use the “ames_validation” dataset to do some additional assessment of your final model. Discuss your findings, be sure to mention:
+* What is the RMSE of your final model when applied to the validation data?  
+* How does this value compare to that of the training data and/or testing data?
+* What percentage of the 95% predictive confidence (or credible) intervals contain the true price of the house in the validation data set?  
+* From this result, does your final model properly reflect uncertainty?
+
+We prepare `ames_validation` for modeling by removing any feature values not seen in `ames_train. This will exclude 4 observations in `ames_validation`.
+
+```{r loadvalidation, message = FALSE}
+load("ames_validation.Rdata")
+
+nrow(ames_validation)
+
+ames_validation_model <- ames_validation  %>% mutate(lprice=log(price)) %>% dplyr::select(c(price,lprice,area,Overall.Cond,Total.Bsmt.SF,Garage.Area,
+           Garage.Cars,MS.SubClass,Neighborhood,House.Style,Heating.QC,
+           Kitchen.Qual,Sale.Type,Sale.Condition)) %>% 
+  filter(House.Style!="2.5Fin")
+
+nrow(ames_validation_model)
+```
+
+Let's determine what percentage of the 95% predictive confidence (or credible) intervals contain the true price of the house in the validation data set.
+
+```{r}
+predict.ci <- as.data.frame(exp(predict(final_model_AIC, ames_validation_model, interval = "prediction")))
+
+ci_pct <- mean(ames_validation_model$price > predict.ci$lwr &
+                        ames_validation_model$price < predict.ci$upr)
+ci_pct
+```
+
+
+We observe that 97.6%  of the validation dataset prices fall within the 95% confidence interval. Therefore, we conclude that our selected final model does  handle uncertainty quite well. 
+
+* * *
+
+```{r model_validate}
+
+round(rmse(ames_validation_model$lprice,predict(final_model_AIC,ames_validation_model)),2)
+```
+
+The RMSE for the `ames_validation` dataset is identical to that of the `ames_test` dataset. We can conclude that our model does a good job of generalizing when exposed to new data.
+
+* * *
+
+## Part 5 Conclusion
+
+Provide a brief summary of your results, and a brief discussion of what you have learned about the data and your model. 
+
+* * *
+
+This housing dataset contains some very interesting features which enable a linear model to predict the selling price for houses. The final model selected achieves a low RMSE in the validation data and it appears to quantify uncertainty quite well. The variables that seem to be more important for predicting the log(`price`)  of a house according to AIC and this model are 
+
+* `area`
+* `Overall.Cond`
+* `Total.Bsmt.SF`
+* `Full.Bath`
+* `Garage.Cars`
+* `MS.SubClass`
+* `Neighborhood`
+* `House.Style`
+* `Heating.QC`
+* `Kitchen.Qual`
+* `Sale.Type`
+* `Sale.Condition`
+
+The final model has an adjusted $R^2$ of 0.8714, explaining 87.1% of the variance in the logarithm of house prices.
+
+
+In the future, collecting more variables in this dataset or using more advanced prediction methodologies than linear regression could contribute to achieve better predictive power starting with this final linear regression model as a springboard.
+
+* * *
